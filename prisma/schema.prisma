@@ -1,0 +1,643 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// =============================
+// schema.prisma (PostgreSQL)
+// =============================
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------
+// Utiliza gen_random_uuid() en PostgreSQL
+// Recuerda crear la extensión pgcrypto.
+// ---------------------------------------
+
+// ---------- Catálogos de usuario ----------
+model user_role_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  // usuarios que hoy tienen este rol
+  users system_user[]
+
+  // back-relations explícitas para historial (¡requeridas!)
+  roleHistoryAsOld user_role_history[] @relation("OldRole")
+  roleHistoryAsNew user_role_history[] @relation("NewRole")
+}
+
+model user_status_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  users system_user[]
+
+  // back-relations para historial de estado
+  statusHistoryAsOld user_status_history[] @relation("OldStatus")
+  statusHistoryAsNew user_status_history[] @relation("NewStatus")
+}
+
+// ---------- Empresa ----------
+model company {
+  id         String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String                @unique
+  users      system_user[]
+  settings   system_settings[]
+  plans      company_plan[]
+  stats      daily_company_stats[]
+  created_at DateTime              @default(now())
+  updated_at DateTime              @default(now())
+
+  @@index([name])
+  api_key_history api_key_history[]
+  internal_user internal_user[]
+}
+
+// ---------- Usuarios del sistema + histórico ----------
+model system_user {
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  email      String              @unique
+  phone      String?
+  role_id    Int
+  status_id  Int
+  company_id String              @db.Uuid
+  last_login DateTime?
+  created_at DateTime            @default(now())
+  updated_at DateTime            @default(now())
+
+  role    user_role_catalog   @relation(fields: [role_id], references: [id])
+  status  user_status_catalog @relation(fields: [status_id], references: [id])
+  company company             @relation(fields: [company_id], references: [id])
+
+  // Relaciones múltiples al mismo modelo (nombradas):
+  role_changes   user_role_history[]   @relation("RoleChangesByUser")
+  status_changes user_status_history[] @relation("StatusChangesByUser")
+
+  // Instalaciones donde es cliente/instalador:
+  installations_as_client    installation[] @relation("InstallationClient")
+  installations_as_installer installation[] @relation("InstallationInstaller")
+
+  // Reportes y archivos:
+  reports_reported security_report[] @relation("ReportsByUser")     // reported_by
+  files_uploaded   evidence_file[]   @relation("FilesUploadedBy")   // uploaded_by
+
+  // Auditoría y API Keys:
+  audit_logs_by_user audit_log[]       @relation("AuditLogsByUser")
+  api_keys_created   api_key_history[] @relation("ApiKeysCreatedBy")
+
+  // Capturas:
+  assignments_as_capturer capture_assignment[] @relation("AssignmentsByCapturer")
+  captures_as_capturer    component_capture[]  @relation("CapturesByUser")
+
+  // Notificaciones
+  notifications notification[]
+
+  @@index([company_id])
+  @@index([role_id])
+  @@index([status_id])
+  @@index([email])
+  user_role_history user_role_history[] @relation("RoleChangeApprovedBy")
+  user_status_history user_status_history[] @relation("StatusChangeApprovedBy")
+  client_certificate certificate[] @relation("CertificateClient")
+  intaller_certificate certificate[] @relation("CertificateInstaller")
+  capture_assignment capture_assignment[] @relation("AssignmentClient")
+  client_alert client_alert[] @relation("AssignmentClient")
+}
+
+model user_role_history {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String  @db.Uuid
+  old_role_id Int?    // opcional -> relación opcional
+  new_role_id Int?    // opcional -> relación opcional
+  changed_by  String? @db.Uuid
+  reason      String?
+  changed_at  DateTime @default(now())
+
+  user      system_user        @relation("RoleChangesByUser", fields: [user_id], references: [id])
+
+  // ¡OJO!: si el FK es ? la relación también debe ser ?
+  old_role  user_role_catalog? @relation("OldRole", fields: [old_role_id], references: [id])
+  new_role  user_role_catalog? @relation("NewRole", fields: [new_role_id], references: [id])
+
+  changedBy system_user?       @relation("RoleChangeApprovedBy", fields: [changed_by], references: [id])
+}
+
+
+model user_status_history {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String  @db.Uuid
+  old_status_id Int?
+  new_status_id Int?
+  changed_by    String? @db.Uuid
+  reason        String?
+  changed_at    DateTime @default(now())
+
+  user       system_user         @relation("StatusChangesByUser", fields: [user_id], references: [id])
+
+  // relaciones opcionales porque los FKs son opcionales
+  old_status user_status_catalog? @relation("OldStatus", fields: [old_status_id], references: [id])
+  new_status user_status_catalog? @relation("NewStatus", fields: [new_status_id], references: [id])
+
+  changedBy  system_user?        @relation("StatusChangeApprovedBy", fields: [changed_by], references: [id])
+}
+
+// ---------- Direcciones ----------
+model address {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  street      String?
+  city        String?
+  state       String?
+  commune     String?
+  country     String?
+  postal_code String?
+
+  installations installation[]
+  assignments   capture_assignment[]
+}
+
+// ---------- Catálogos de instalación ----------
+model installation_type_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  installations installation[]
+}
+
+model installation_status_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  installations installation[]
+}
+
+// ---------- Instalaciones ----------
+model installation {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String?
+  client_id        String   @db.Uuid
+  installer_id     String?  @db.Uuid
+  type_id          Int?
+  status_id        Int?
+  address_id       String?  @db.Uuid
+  start_date       DateTime?
+  end_date         DateTime?
+  estimated_power_w Decimal? @db.Decimal(18,2)
+  components_count Int      @default(0)
+  progress         Decimal? @db.Decimal(5,2)
+  image_url        String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now())
+
+  client    system_user                  @relation("InstallationClient", fields: [client_id], references: [id])
+  installer system_user?                 @relation("InstallationInstaller", fields: [installer_id], references: [id])
+  type      installation_type_catalog?   @relation(fields: [type_id], references: [id])
+  status    installation_status_catalog? @relation(fields: [status_id], references: [id])
+  address   address?                     @relation(fields: [address_id], references: [id])
+
+  components   component[]
+  certificates certificate[]
+  assignments  capture_assignment[]
+
+  @@index([client_id])
+  @@index([installer_id])
+  @@index([status_id])
+  @@index([type_id])
+}
+
+// ---------- Catálogos de componentes ----------
+model component_type_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  components component[]
+  captures   component_capture[]
+  reports    security_report[]
+}
+
+model component_status_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  components component[]
+}
+
+// ---------- Componentes ----------
+model component {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  serial_number     String   @unique
+  type_id           Int
+  brand             String?
+  model             String?
+  status_id         Int
+  location          String?
+  installation_id   String?  @db.Uuid
+  installation_date DateTime?
+  warranty_expiry   DateTime?
+  power_w           Decimal? @db.Decimal(18,2)
+  efficiency_pct    Decimal? @db.Decimal(5,2)
+  notes             String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @default(now())
+
+  type        component_type_catalog   @relation(fields: [type_id], references: [id])
+  status      component_status_catalog @relation(fields: [status_id], references: [id])
+  installation installation?           @relation(fields: [installation_id], references: [id])
+
+  quality_history component_quality_history[]
+
+  // RMA (dos relaciones al mismo modelo):
+  rma_removed rma_movement[] @relation("RmaRemovedComponent")
+  rma_new     rma_movement[] @relation("RmaNewComponent")
+
+  // Reportes/capturas
+  reports  security_report[]   @relation("ReportOnComponent")
+  captures component_capture[] @relation("CaptureOfComponent")
+
+  @@index([type_id])
+  @@index([status_id])
+  @@index([installation_id])
+  @@index([serial_number])
+}
+
+model component_quality_history {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  component_id  String   @db.Uuid
+  date          DateTime @default(now())
+  state         String
+  quality_color String
+  notes         String?
+
+  component component @relation(fields: [component_id], references: [id])
+
+  @@index([component_id, date(sort: Desc)])
+}
+
+// ---------- RMA / Reemplazos ----------
+model rma_movement {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  removed_component_id String?  @db.Uuid
+  new_component_id     String?  @db.Uuid
+  reason               String
+  date                 DateTime @default(now())
+  evidence_url         String?
+
+  removed_component component? @relation("RmaRemovedComponent", fields: [removed_component_id], references: [id])
+  new_component     component? @relation("RmaNewComponent",     fields: [new_component_id],     references: [id])
+
+  @@index([removed_component_id])
+  @@index([new_component_id])
+}
+
+// ---------- Certificados ----------
+model certificate_status_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  certificates certificate[]
+}
+
+model certificate {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  installation_id    String?  @db.Uuid
+  certificate_number String   @unique
+  client_id          String?  @db.Uuid
+  installer_id       String?  @db.Uuid
+  issue_date         DateTime
+  expiry_date        DateTime?
+  status_id          Int
+  location           String?
+  components_count   Int?
+  total_power_w      Decimal? @db.Decimal(18,2)
+  file_url           String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @default(now())
+
+  installation installation?              @relation(fields: [installation_id], references: [id])
+  client       system_user?               @relation("CertificateClient", fields: [client_id], references: [id])
+  installer    system_user?               @relation("CertificateInstaller", fields: [installer_id], references: [id])
+  status       certificate_status_catalog @relation(fields: [status_id], references: [id])
+
+  @@index([client_id])
+  @@index([installer_id])
+  @@index([status_id])
+}
+
+// ---------- Reportes de seguridad / denuncias ----------
+model report_type_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  reports security_report[]
+}
+
+model report_status_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  reports security_report[]
+}
+
+model priority_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  reports       security_report[]
+  notifications notification[]
+}
+
+model evidence_file {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  url         String
+  mime_type   String?
+  uploaded_by String?      @db.Uuid
+  created_at  DateTime     @default(now())
+
+  uploadedBy system_user?             @relation("FilesUploadedBy", fields: [uploaded_by], references: [id])
+  in_reports security_report_evidence[]
+}
+
+model security_report {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type_id           Int
+  component_id      String?  @db.Uuid
+  component_serial  String?
+  component_type_id Int?
+  status_id         Int
+  priority_id       Int
+  reported_by       String?  @db.Uuid
+  report_date       DateTime @default(now())
+  location          String?
+  description       String?
+  resolution        String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @default(now())
+
+  type          report_type_catalog     @relation(fields: [type_id], references: [id])
+  status        report_status_catalog   @relation(fields: [status_id], references: [id])
+  priority      priority_catalog        @relation(fields: [priority_id], references: [id])
+  component     component?              @relation("ReportOnComponent", fields: [component_id], references: [id])
+  componentType component_type_catalog? @relation(fields: [component_type_id], references: [id])
+  reporter      system_user?            @relation("ReportsByUser", fields: [reported_by], references: [id])
+  evidences     security_report_evidence[]
+
+  @@index([status_id])
+  @@index([priority_id])
+  @@index([component_serial])
+  @@index([report_date(sort: Desc)])
+}
+
+model security_report_evidence {
+  report_id   String        @db.Uuid
+  evidence_id String        @db.Uuid
+
+  report   security_report @relation(fields: [report_id], references: [id])
+  evidence evidence_file   @relation(fields: [evidence_id], references: [id])
+
+  @@id([report_id, evidence_id])
+}
+
+// ---------- Captura de datos ----------
+model capture_assignment {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  capturer_id         String   @db.Uuid
+  installation_id     String   @db.Uuid
+  address_id          String?  @db.Uuid
+  client_id           String?  @db.Uuid
+  date                DateTime?
+  status              String?
+  progress            Decimal? @db.Decimal(5,2)
+  components_total    Int?
+  components_captured Int?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+
+  capturer    system_user   @relation("AssignmentsByCapturer", fields: [capturer_id], references: [id])
+  installation installation  @relation(fields: [installation_id], references: [id])
+  address     address?       @relation(fields: [address_id], references: [id])
+  client      system_user?   @relation("AssignmentClient", fields: [client_id], references: [id])
+
+  @@index([capturer_id, date])
+}
+
+model component_capture {
+  id           String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  capturer_id  String                  @db.Uuid
+  component_id String?                 @db.Uuid
+  serial       String
+  type_id      Int?
+  timestamp    DateTime                @default(now())
+  status       String?
+  location     String?
+  created_at   DateTime                @default(now())
+
+  capturer system_user             @relation("CapturesByUser", fields: [capturer_id], references: [id])
+  component component?             @relation("CaptureOfComponent", fields: [component_id], references: [id])
+  type      component_type_catalog? @relation(fields: [type_id], references: [id])
+
+  @@index([capturer_id, timestamp(sort: Desc)])
+}
+
+// ---------- Notificaciones ----------
+model notification_type_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+
+  notifications notification[]
+}
+
+model notification {
+  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String               @db.Uuid
+  type_id     Int
+  title       String
+  message     String
+  timestamp   DateTime             @default(now())
+  is_read     Boolean              @default(false)
+  priority_id Int?
+  related_id  String?
+  created_at  DateTime             @default(now())
+
+  user     system_user              @relation(fields: [user_id], references: [id])
+  type     notification_type_catalog @relation(fields: [type_id], references: [id])
+  priority priority_catalog?        @relation(fields: [priority_id], references: [id])
+
+  @@index([user_id, is_read])
+  @@index([timestamp(sort: Desc)])
+}
+
+// ---------- Configuración / API / Auditoría / Backups ----------
+model system_settings {
+  id                         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id                 String?  @db.Uuid
+  company_name               String?
+  company_email              String?
+  company_phone              String?
+  company_website            String?
+  company_address            String?
+  two_factor_auth            Boolean  @default(false)
+  session_expiration         String?
+  audit_logging              Boolean  @default(true)
+  alerts_robo                Boolean  @default(true)
+  weekly_reports             Boolean  @default(false)
+  maintenance_notifications  Boolean  @default(true)
+  api_key_current            String?
+  database_connection_status String?
+  last_backup_at             DateTime?
+  version                    String?
+  created_at                 DateTime @default(now())
+  updated_at                 DateTime @default(now())
+
+  company company? @relation(fields: [company_id], references: [id])
+
+  @@index([company_id])
+}
+
+model api_key_history {
+  id         String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String?     @db.Uuid
+  api_key    String
+  created_by String?     @db.Uuid
+  created_at DateTime    @default(now())
+  revoked_at DateTime?
+
+  company   company?     @relation(fields: [company_id], references: [id])
+  createdBy system_user? @relation("ApiKeysCreatedBy", fields: [created_by], references: [id])
+
+  @@index([company_id, created_at(sort: Desc)])
+}
+
+model audit_log {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actor_id   String?    @db.Uuid
+  action     String
+  entity     String
+  entity_id  String?
+  diff       Json?
+  created_at DateTime   @default(now())
+
+  actor system_user? @relation("AuditLogsByUser", fields: [actor_id], references: [id])
+
+  @@index([actor_id, created_at(sort: Desc)])
+  @@index([entity, created_at(sort: Desc)])
+}
+
+model backup_run {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  started_at   DateTime @default(now())
+  finished_at  DateTime?
+  status       String?
+  location_url String?
+  notes        String?
+}
+
+// ---------- Planes / Bolsas ----------
+model plan_catalog {
+  id                Int            @id @default(autoincrement())
+  code              String         @unique
+  label             String
+  monthly_allowance Int
+
+  companies company_plan[]
+}
+
+model company_plan {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id     String    @db.Uuid
+  plan_id        Int
+  started_at     DateTime
+  expires_at     DateTime
+  bags_used      Int       @default(0)
+  bags_available Int       @default(0)
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @default(now())
+
+  company company      @relation(fields: [company_id], references: [id])
+  plan    plan_catalog @relation(fields: [plan_id], references: [id])
+
+  @@unique([company_id, plan_id, started_at])
+  @@index([company_id, expires_at(sort: Desc)])
+}
+
+// ---------- KPIs / Estadísticas ----------
+model daily_company_stats {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id       String   @db.Uuid
+  stat_date        DateTime
+  active_projects  Int      @default(0)
+  components_today Int      @default(0)
+  components_month Int      @default(0)
+  error_rate       Decimal  @default(0) @db.Decimal(5,2)
+  open_reports     Int      @default(0)
+  bags_used        Int      @default(0)
+  bags_available   Int      @default(0)
+  created_at       DateTime @default(now())
+
+  company company @relation(fields: [company_id], references: [id])
+
+  @@unique([company_id, stat_date])
+  @@index([company_id, stat_date(sort: Desc)])
+}
+
+model system_stats_monthly {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  month              DateTime
+  total_installations Int?
+  total_components   Int?
+  active_companies   Int?
+  pending_reports    Int?
+  monthly_growth     Decimal? @db.Decimal(7,3)
+  system_health      Decimal? @db.Decimal(5,2)
+  created_at         DateTime @default(now())
+
+  @@unique([month])
+  @@index([month(sort: Desc)])
+}
+
+// ---------- Otros (alerts cliente / usuarios internos) ----------
+model client_alert {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  client_id String   @db.Uuid
+  type      String
+  message   String
+  date      DateTime @default(now())
+
+  client system_user @relation("AssignmentClient", fields: [client_id], references: [id])
+
+  @@index([client_id, date(sort: Desc)])
+}
+
+model internal_user {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String   @db.Uuid
+  name       String
+  email      String
+  role       String
+  status     String
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now())
+
+  company company @relation(fields: [company_id], references: [id])
+
+  @@index([company_id])
+}
+
