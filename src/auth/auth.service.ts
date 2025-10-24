@@ -1,4 +1,5 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+// ...existing imports...
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { AuthDto } from './dto/auth.dto';
@@ -6,61 +7,128 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
+
 @Injectable()
 export class AuthService {
     constructor(
-        private jwtService: JwtService,
         private prisma: PrismaService,
-    ) { }
+        private jwtService: JwtService,
+    ) {}
 
-    async createUser(data: CreateUserDto): Promise<object> {
-        const existingUser = await this.prisma.system_user.findUnique({
-            where: { email: data.email }
+    async findById(id: string) {
+        const user = await this.prisma.system_user.findUnique({
+            where: { id },
+            include: { role: { include: { role_permissions: { include: { permission: true } } } } },
+        });
+        if (!user) throw new NotFoundException('User not found');
+        return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role.code,
+            permissions: user.role.role_permissions.map(rp => rp.permission.code),
+        };
+    }
+
+
+    async assignRoles(userId: string, roleIds: number[]) {
+        // Actualiza rol
+        await this.prisma.system_user.update({
+            where: { id: userId },
+            data: { role_id: roleIds[0] },
         });
 
-        if (existingUser) {
-            throw new BadRequestException('Email already registered');
-        }
+        // Recarga con permisos
+        const user = await this.prisma.system_user.findUnique({
+            where: { id: userId },
+            include: {
+                role: {
+                    include: { role_permissions: { include: { permission: true } } },
+                },
+            },
+        });
+        if (!user) throw new BadRequestException('User not found');
 
-        const hashedPassword = await bcrypt.hash(data.password, 10);
+        return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role.code,
+            permissions: user.role.role_permissions.map(rp => rp.permission.code),
+        };
+    }
 
+    async getUsers(page: number, limit: number) {
+        const skip = (page - 1) * limit;
+        const [items, total] = await Promise.all([
+            this.prisma.system_user.findMany({
+                skip,
+                take: limit,
+                include: {
+                    role: { include: { role_permissions: { include: { permission: true } } } },
+                },
+            }),
+            this.prisma.system_user.count(),
+        ]);
+
+        const users = items.map(u => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            role: u.role.code,
+            permissions: u.role.role_permissions.map(rp => rp.permission.code),
+        }));
+
+        return { items: users, total };
+    }
+
+    async createUser(data: { email: string; password: string; name?: string }) {
+        // 1. Hashear contraseña
+        const password_hash = await bcrypt.hash(data.password, 10);
+
+        // 2. Encontrar rol Viewer por defecto
+        const viewerRole = await this.prisma.user_role_catalog.findUnique({
+            where: { code: 'viewer' },
+        });
+        if (!viewerRole) throw new Error('Default Viewer role not found');
+
+        // 3. Encontrar compañía por defecto
+        const defaultCompany = await this.prisma.company.findFirst();
+        if (!defaultCompany) throw new Error('Default company not found');
+
+        // 4. Crear usuario con campos completos
         const user = await this.prisma.system_user.create({
             data: {
-                name: data.name,
+                name: data.name ?? data.email,      // si no hay nombre, uso el email
                 email: data.email,
-                password_hash: hashedPassword,
-                role_id: parseInt(data.role_id),
-                company_id: data.company_id,
-                status_id: 1 // Active status
+                password_hash,
+                role_id: viewerRole.id,              // rol Viewer
+                status_id: 1,                        // estado “active” seed-id = 1
+                company_id: defaultCompany.id,       // compañía creada en seed
             },
             include: {
                 role: {
                     include: {
                         role_permissions: {
-                            include: {
-                                permission: true
-                            }
+                            include: { permission: true }
                         }
                     }
                 }
             }
         });
 
-        const permissions = user.role.role_permissions.map(rp => rp.permission.code);
-
+        // 5. Eliminar el hash antes de devolver
+        delete (user as any).password_hash;
         return {
-            code: 201,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role.code,
-                permissions
-            }
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role.code,
+            permissions: user.role.role_permissions.map(rp => rp.permission.code),
         };
     }
 
-    async updateUserRoles(userId: string, data: UpdateUserRolesDto): Promise<object> {
+    async updateUserRoles(userId: string, data: { roleIds: number[] }): Promise<object> {
         const user = await this.prisma.system_user.findUnique({
             where: { id: userId },
             include: {
@@ -76,7 +144,7 @@ export class AuthService {
         const updatedUser = await this.prisma.system_user.update({
             where: { id: userId },
             data: {
-                role_id: parseInt(data.role_ids[0]) // For now, we'll just use the first role
+                role_id: data.roleIds[0]
             },
             include: {
                 role: {
