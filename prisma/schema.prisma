@@ -22,6 +22,29 @@ datasource db {
 // ---------------------------------------
 
 // ---------- Catálogos de usuario ----------
+model permission_catalog {
+  id    Int     @id @default(autoincrement())
+  code  String  @unique
+  label String
+  
+  // Relación con roles a través de role_permission
+  role_permissions role_permission[]
+}
+
+model role_permission {
+  id            Int               @id @default(autoincrement())
+  role_id       Int
+  permission_id Int
+  
+  // Relaciones
+  role       user_role_catalog   @relation(fields: [role_id], references: [id])
+  permission permission_catalog @relation(fields: [permission_id], references: [id])
+
+  @@unique([role_id, permission_id])
+  @@index([role_id])
+  @@index([permission_id])
+}
+
 model user_role_catalog {
   id    Int     @id @default(autoincrement())
   code  String  @unique
@@ -33,6 +56,9 @@ model user_role_catalog {
   // back-relations explícitas para historial (¡requeridas!)
   roleHistoryAsOld user_role_history[] @relation("OldRole")
   roleHistoryAsNew user_role_history[] @relation("NewRole")
+
+  // Relación con permisos
+  role_permissions role_permission[]
 }
 
 model user_status_catalog {
@@ -65,16 +91,17 @@ model company {
 
 // ---------- Usuarios del sistema + histórico ----------
 model system_user {
-  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name       String
-  email      String              @unique
-  phone      String?
-  role_id    Int
-  status_id  Int
-  company_id String              @db.Uuid
-  last_login DateTime?
-  created_at DateTime            @default(now())
-  updated_at DateTime            @default(now())
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  email         String              @unique
+  password_hash String              // Added password_hash field
+  phone         String?
+  role_id       Int
+  status_id     Int
+  company_id    String              @db.Uuid
+  last_login    DateTime?
+  created_at    DateTime            @default(now())
+  updated_at    DateTime            @default(now())
 
   role    user_role_catalog   @relation(fields: [role_id], references: [id])
   status  user_status_catalog @relation(fields: [status_id], references: [id])
