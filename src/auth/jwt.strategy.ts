@@ -4,14 +4,19 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 
 export interface IJwtPayload {
-    id: number;
+    id: string;
     email: string;
     name: string;
+    roles: string[];
+    permissions: string[];
 }
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-    constructor(configService: ConfigService) {
+    constructor(
+        configService: ConfigService,
+        private prisma: PrismaService
+    ) {
         const secret = configService.get<string>('JWT_SECRET');
         if (!secret) {
             throw new Error('JWT_SECRET is not defined in environment variables');
@@ -25,10 +30,34 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     async validate(payload: IJwtPayload) {
+        // Fetch fresh role and permissions from database
+        const user = await this.prisma.system_user.findUnique({
+            where: { id: payload.id },
+            include: {
+                role: {
+                    include: {
+                        role_permissions: {
+                            include: {
+                                permission: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!user) {
+            throw new UnauthorizedException('User no longer exists');
+        }
+
+        const permissions = user.role.role_permissions.map(rp => rp.permission.code);
+
         return {
-            id: payload.id,
-            name: payload.name,
-            email: payload.email,
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role.code,
+            permissions
         };
     }
 }
