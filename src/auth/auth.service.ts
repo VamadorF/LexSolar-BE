@@ -87,7 +87,7 @@ export class AuthService {
         const password_hash = await bcrypt.hash(data.password, 10);
 
         // 2. Encontrar rol Viewer por defecto
-        const viewerRole = await this.prisma.user_role_catalog.findUnique({
+        const viewerRole = await this.prisma.user_role.findUnique({
             where: { code: 'viewer' },
         });
         if (!viewerRole) throw new Error('Default Viewer role not found');

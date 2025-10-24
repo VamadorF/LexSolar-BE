@@ -37,7 +37,7 @@ model role_permission {
   permission_id Int
   
   // Relaciones
-  role       user_role_catalog   @relation(fields: [role_id], references: [id])
+  role       user_role   @relation(fields: [role_id], references: [id])
   permission permission_catalog @relation(fields: [permission_id], references: [id])
 
   @@unique([role_id, permission_id])
@@ -45,7 +45,7 @@ model role_permission {
   @@index([permission_id])
 }
 
-model user_role_catalog {
+model user_role {
   id    Int     @id @default(autoincrement())
   code  String  @unique
   label String
@@ -103,7 +103,7 @@ model system_user {
   created_at    DateTime            @default(now())
   updated_at    DateTime            @default(now())
 
-  role    user_role_catalog   @relation(fields: [role_id], references: [id])
+  role    user_role   @relation(fields: [role_id], references: [id])
   status  user_status_catalog @relation(fields: [status_id], references: [id])
   company company             @relation(fields: [company_id], references: [id])
 
@@ -154,8 +154,8 @@ model user_role_history {
   user      system_user        @relation("RoleChangesByUser", fields: [user_id], references: [id])
 
   // ¡OJO!: si el FK es ? la relación también debe ser ?
-  old_role  user_role_catalog? @relation("OldRole", fields: [old_role_id], references: [id])
-  new_role  user_role_catalog? @relation("NewRole", fields: [new_role_id], references: [id])
+  old_role  user_role? @relation("OldRole", fields: [old_role_id], references: [id])
+  new_role  user_role? @relation("NewRole", fields: [new_role_id], references: [id])
 
   changedBy system_user?       @relation("RoleChangeApprovedBy", fields: [changed_by], references: [id])
 }

@@ -13,7 +13,7 @@ async function main() {
   ];
 
   for (const role of roles) {
-    await prisma.user_role_catalog.upsert({
+    await prisma.user_role.upsert({
       where: { code: role.code },
       update: {},
       create: role
@@ -61,7 +61,7 @@ async function main() {
   };
 
   for (const [roleCode, permissions] of Object.entries(rolePermissions)) {
-    const role = await prisma.user_role_catalog.findUnique({
+    const role = await prisma.user_role.findUnique({
       where: { code: roleCode }
     });
     if (!role) continue;
@@ -102,7 +102,7 @@ async function main() {
   });
 
   // Create initial admin user
-  const adminRole = await prisma.user_role_catalog.findUnique({
+  const adminRole = await prisma.user_role.findUnique({
     where: { code: 'admin' }
   });
 
