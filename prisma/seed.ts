@@ -64,11 +64,13 @@ async function main() {
     const role = await prisma.user_role_catalog.findUnique({
       where: { code: roleCode }
     });
+    if (!role) continue;
 
     for (const permissionCode of permissions) {
       const permission = await prisma.permission_catalog.findUnique({
         where: { code: permissionCode }
       });
+      if (!permission) continue;
 
       await prisma.role_permission.upsert({
         where: {
@@ -86,25 +88,41 @@ async function main() {
     }
   }
 
+  // Create company and active status for admin
+  const company = await prisma.company.upsert({
+    where: { name: 'Default Company' },
+    update: {},
+    create: { name: 'Default Company' }
+  });
+
+  const activeStatus = await prisma.user_status_catalog.upsert({
+    where: { code: 'active' },
+    update: {},
+    create: { code: 'active', label: 'Active' }
+  });
+
   // Create initial admin user
   const adminRole = await prisma.user_role_catalog.findUnique({
     where: { code: 'admin' }
   });
 
-  const hashedPassword = await bcrypt.hash('admin123', 10);
+  if (adminRole) {
+    const hashedPassword = await bcrypt.hash('admin123', 10);
 
-  await prisma.system_user.upsert({
-    where: { email: 'admin@lexsolar.com' },
-    update: {},
-    create: {
-      name: 'Admin User',
-      email: 'admin@lexsolar.com',
-      password_hash: hashedPassword,
-      role_id: adminRole.id,
-      status_id: 1, // Assuming 1 is active
-      company_id: '00000000-0000-0000-0000-000000000000' // Replace with actual company ID
-    }
-  });
+    const admin = await prisma.system_user.upsert({
+      where: { email: 'admin@lexsolar.com' },
+      update: {},
+      create: {
+        name: 'Admin User',
+        email: 'admin@lexsolar.com',
+        password_hash: hashedPassword,
+        role_id: adminRole.id,
+        status_id: activeStatus.id,
+        company_id: company.id
+      }
+    });
+    console.log('Seeded admin:', admin);
+  }
 
   console.log('Seed completed successfully');
 }
