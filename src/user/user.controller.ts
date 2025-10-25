@@ -15,7 +15,6 @@ export class UserController {
         return this.userService.createUser(createUserDto);
     }
 
-    // users.controller.ts
     @Patch('me')
     @UseGuards(JwtAuthGuard)
     async updateMyProfile(
