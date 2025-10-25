@@ -102,6 +102,8 @@ model system_user {
   last_login    DateTime?
   created_at    DateTime            @default(now())
   updated_at    DateTime            @default(now())
+  code          String?
+  active        Boolean             @default(true)
 
   role    user_role   @relation(fields: [role_id], references: [id])
   status  user_status_catalog? @relation(fields: [status_id], references: [id])

@@ -35,7 +35,7 @@ export class AuthService {
 
         // Update last login
         await this.prisma.system_user.update({
-            where: { id: user.id },
+            where: { id: user.id, active: true },
             data: { last_login: new Date() }
         });
 
@@ -46,14 +46,7 @@ export class AuthService {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                
-            }),
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-            }
+            })
         };
     }
 }
