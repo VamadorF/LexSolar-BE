@@ -97,15 +97,15 @@ model system_user {
   password_hash String              // Added password_hash field
   phone         String?
   role_id       Int
-  status_id     Int
-  company_id    String              @db.Uuid
+  status_id     Int?
+  company_id    String?              @db.Uuid
   last_login    DateTime?
   created_at    DateTime            @default(now())
   updated_at    DateTime            @default(now())
 
   role    user_role   @relation(fields: [role_id], references: [id])
-  status  user_status_catalog @relation(fields: [status_id], references: [id])
-  company company             @relation(fields: [company_id], references: [id])
+  status  user_status_catalog? @relation(fields: [status_id], references: [id])
+  company company?             @relation(fields: [company_id], references: [id])
 
   // Relaciones múltiples al mismo modelo (nombradas):
   role_changes   user_role_history[]   @relation("RoleChangesByUser")
