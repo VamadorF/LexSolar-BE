@@ -10,17 +10,18 @@ export class RoleService {
 
     async createRole(data: CreateRoleDto) {
 
+        // 0 verificar los datos
         if (!data) {
             throw new BadRequestException('Data is required to create a role');
         }
 
-        // 1️⃣ Transformar objeto plano en instancia del DTO
+        // 1 Transformar objeto plano en instancia del DTO
         const dtoInstance = plainToInstance(CreateRoleDto, data, {
             excludeExtraneousValues: true, // descarta props no declaradas en el DTO
             enableImplicitConversion: true, // convierte tipos (por ejemplo string->number)
         });
-        console.log({data, dtoInstance});
-        // 2️⃣ Validar (usando class-validator)
+
+        // 2 Validar (usando class-validator)
         try {
             await validateOrReject(dtoInstance);
         } catch (errors) {
