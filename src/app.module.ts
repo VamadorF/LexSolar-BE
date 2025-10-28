@@ -10,6 +10,8 @@ import { UserModule } from './user/user.module';
 import { InstallationModule } from './installation/installation.module';
 import { ComponentController } from './component/component.controller';
 import { ComponentModule } from './component/component.module';
+import { PlanModule } from './plan/plan.module';
+import { CompanyModule } from './company/company.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { ComponentModule } from './component/component.module';
     UserModule,
     InstallationModule,
     ComponentModule,
+    PlanModule,
+    CompanyModule,
   ],
   controllers: [AppController, ComponentController],
   providers: [AppService],

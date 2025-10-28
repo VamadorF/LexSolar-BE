@@ -77,12 +77,15 @@ model user_status_catalog {
 model company {
   id         String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name       String                @unique
+  creator_id String                @db.Uuid
   users      system_user[]
+
   settings   system_settings[]
   plans      company_plan[]
   stats      daily_company_stats[]
   created_at DateTime              @default(now())
   updated_at DateTime              @default(now())
+  user       system_user           @relation("created_by", fields: [creator_id], references: [id])
 
   @@index([name])
   api_key_history api_key_history[]
@@ -142,6 +145,7 @@ model system_user {
   intaller_certificate certificate[] @relation("CertificateInstaller")
   capture_assignment capture_assignment[] @relation("AssignmentClient")
   client_alert client_alert[] @relation("AssignmentClient")
+  company_owned company[] @relation("created_by")
 }
 
 model user_role_history {
@@ -585,6 +589,7 @@ model plan_catalog {
   code              String         @unique
   label             String
   monthly_allowance Int
+  reset_timezone    String           @default("America/Santiago") // para cortes de mes coherentes
 
   companies company_plan[]
 }
